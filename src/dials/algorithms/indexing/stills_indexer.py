@@ -71,16 +71,14 @@ def e_refine(params, experiments, reflections, graph_verbose=False):
     if outlier_algorithm == "sauter_poon":
         params.refinement.reflections.outlier.algorithm = "null"
 
+    # params is the caller's scope, shared by every still, so restore in a finally.
     try:
         refiner = RefinerFactory.from_parameters_data_experiments(
             params, reflections, experiments
         )
         refiner.run()
-    except ValueError:
+    finally:
         params.refinement.reflections.outlier.algorithm = outlier_algorithm
-        raise
-
-    params.refinement.reflections.outlier.algorithm = outlier_algorithm
 
     if not graph_verbose:
         return refiner
