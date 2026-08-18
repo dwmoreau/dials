@@ -805,6 +805,10 @@ class Script:
                 n_accept = n_mod_denom < process_fractions.numerator
                 return n_accept
 
+        # The import graph and pre_import's per-image ExperimentLists are live for the
+        # whole run; freeze them so the collector stops rescanning them on every image.
+        gc.freeze()
+
         # Process the data
         if params.mp.method == "mpi":
             if size <= 2:  # client/server only makes sense for n>2

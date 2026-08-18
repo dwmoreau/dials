@@ -1,0 +1,3 @@
+``dials.stills_process``: freeze the object graph that exists before the processing
+loop so the per-image garbage collection stops rescanning it. The same garbage is
+collected, in a fraction of the time.
