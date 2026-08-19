@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import logging
 import math
 from itertools import combinations as iter_combinations
@@ -18,6 +19,12 @@ from dials.algorithms.indexing.compare_orientation_matrices import (
 from dials.algorithms.indexing.symmetry import find_matching_symmetry
 
 logger = logging.getLogger(__name__)
+
+# Widen the volume window by this relative amount so a candidate sitting on the
+# bound cannot be lost to rounding.  The window spans a factor of two, so the cost
+# in selectivity is nil.
+_VOLUME_WINDOW_SLACK = 1e-6
+_ANGLE_EPS = 1e-9
 
 
 def candidate_orientation_matrices(basis_vectors, max_combinations=None):
@@ -119,6 +126,67 @@ def candidate_orientation_matrices(basis_vectors, max_combinations=None):
             yield model
 
 
+def _volume_window(
+    target_unit_cell, relative_length_tolerance, absolute_angle_tolerance
+):
+    """Bound the volume ratio of any cell that :func:`filter_known_symmetry` accepts.
+
+    ``uctbx.unit_cell.is_similar_to`` compares the six cell parameters elementwise, so
+    an accepted cell has each length within a factor ``[1 - rel, 1 / (1 - rel)]`` of the
+    target's and each angle within ``absolute_angle_tolerance`` of it.  Writing
+    ``V = a b c f(alpha, beta, gamma)``, those two constraints bound ``V`` independently.
+
+    Returns the ``(lo, hi)`` bounds on ``V / target_unit_cell.volume()``, or ``None`` if
+    the tolerances do not bound it.
+    """
+    if relative_length_tolerance >= 1:
+        return None
+    angles = target_unit_cell.parameters()[3:]
+    f_target = _cell_volume_factor(*(math.cos(math.radians(a)) for a in angles))
+    if f_target <= 0:
+        return None
+    f_lo, f_hi = _volume_factor_extrema(angles, absolute_angle_tolerance)
+    length_lo = (1 - relative_length_tolerance) ** 3
+    return (
+        length_lo * f_lo / f_target * (1 - _VOLUME_WINDOW_SLACK),
+        f_hi / (length_lo * f_target) * (1 + _VOLUME_WINDOW_SLACK),
+    )
+
+
+def _cell_volume_factor(cos_alpha, cos_beta, cos_gamma):
+    square = (
+        1
+        - cos_alpha**2
+        - cos_beta**2
+        - cos_gamma**2
+        + 2 * cos_alpha * cos_beta * cos_gamma
+    )
+    return math.sqrt(square) if square > 0 else 0
+
+
+def _volume_factor_extrema(angles, tolerance):
+    """Exact extrema of ``f`` over the box of angles within ``tolerance`` of ``angles``.
+
+    ``d(f**2)/d(cos alpha) = -2 cos alpha + 2 cos beta cos gamma``, so a critical point
+    interior in any coordinate requires that coordinate's cosine to be zero.  The
+    extrema therefore lie among the points whose cosines are interval endpoints or zero.
+    """
+    axes = []
+    for angle in angles:
+        lo = math.cos(math.radians(max(angle - tolerance, _ANGLE_EPS)))
+        hi = math.cos(math.radians(min(angle + tolerance, 180 - _ANGLE_EPS)))
+        cosines = {lo, hi}
+        if min(lo, hi) <= 0 <= max(lo, hi):
+            cosines.add(0.0)
+        axes.append(cosines)
+    factors = [
+        f
+        for f in (_cell_volume_factor(*point) for point in itertools.product(*axes))
+        if f > 0
+    ]
+    return min(factors), max(factors)
+
+
 def filter_known_symmetry(
     crystal_models,
     target_symmetry,
@@ -144,11 +212,22 @@ def filter_known_symmetry(
 
     cb_op_ref_to_primitive = target_symmetry.change_of_basis_op_to_primitive_setting()
 
+    volume_window = None
     if target_symmetry.unit_cell() is not None:
         target_symmetry_primitive = target_symmetry.change_basis(cb_op_ref_to_primitive)
         target_unit_cell = (
             target_symmetry.as_reference_setting().best_cell().unit_cell()
         )
+        ratio_window = _volume_window(
+            target_unit_cell, relative_length_tolerance, absolute_angle_tolerance
+        )
+        if ratio_window is not None:
+            # find_matching_symmetry only returns subgroups of the target's Bravais
+            # type, so the accepted cell is the candidate's primitive volume scaled by
+            # the target's centring multiplicity; comparing against the target's
+            # primitive volume cancels that factor.
+            primitive_volume = target_symmetry_primitive.unit_cell().volume()
+            volume_window = tuple(r * primitive_volume for r in ratio_window)
     else:
         target_symmetry_primitive = target_symmetry.customized_copy(
             space_group_info=target_symmetry.space_group_info().change_basis(
@@ -166,6 +245,14 @@ def filter_known_symmetry(
 
     for model in crystal_models:
         uc = model.get_unit_cell()
+        if volume_window is not None and not (
+            volume_window[0] <= uc.volume() <= volume_window[1]
+        ):
+            logger.debug(
+                "Rejecting crystal model inconsistent with input symmetry:\n"
+                f"  Unit cell: {str(uc)}"
+            )
+            continue
         best_subgroup = find_matching_symmetry(
             uc, None, max_delta=max_delta, target_bravais_str=target_bravais_str
         )

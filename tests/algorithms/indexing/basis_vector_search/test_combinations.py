@@ -5,6 +5,7 @@ import logging
 
 import scitbx.matrix
 from cctbx import crystal, sgtbx, uctbx
+from cctbx.sgtbx.bravais_types import bravais_lattice
 from cctbx.sgtbx.lattice_symmetry import metric_subgroups
 from dxtbx.model import Crystal
 from scitbx.math import euler_angles_as_matrix
@@ -143,3 +144,76 @@ def test_filter_similar_orientations():
         crystal_models, other_crystal_models, minimum_angular_separation=2
     )
     assert list(filtered) == crystal_models
+
+
+def test_filter_known_symmetry_volume_window(setup_rlp):
+    """The volume window rejects only models the symmetry search rejects anyway."""
+    max_cell = 1.3 * max(setup_rlp["crystal_symmetry"].unit_cell().parameters()[:3])
+    strategy = FFT1D(max_cell)
+    basis_vectors, used = strategy.find_basis_vectors(setup_rlp["rlp"])
+
+    crystal_models = list(
+        combinations.candidate_orientation_matrices(basis_vectors, max_combinations=50)
+    )
+    # scaled copies sit far outside the window, so it is exercised whatever the
+    # candidate search happens to produce
+    for model in list(crystal_models):
+        for scale in (0.7, 1.35):
+            crystal_models.append(
+                Crystal(
+                    *([scale * x for x in v] for v in model.get_real_space_vectors()),
+                    space_group=sgtbx.space_group(),
+                )
+            )
+
+    for target_symmetry in (
+        setup_rlp["crystal_symmetry"],
+        setup_rlp["crystal_symmetry"].as_reference_setting(),
+    ):
+        cb_op_ref_to_primitive = (
+            target_symmetry.change_of_basis_op_to_primitive_setting()
+        )
+        target_symmetry_primitive = target_symmetry.change_basis(cb_op_ref_to_primitive)
+        target_unit_cell = (
+            target_symmetry.as_reference_setting().best_cell().unit_cell()
+        )
+        target_bravais_str = str(
+            bravais_lattice(
+                group=target_symmetry_primitive.space_group_info()
+                .reference_setting()
+                .group()
+            )
+        )
+        lo, hi = combinations._volume_window(target_unit_cell, 0.1, 5)
+        volume = target_symmetry_primitive.unit_cell().volume()
+        lo, hi = lo * volume, hi * volume
+
+        n_out_of_band = 0
+        expected = []
+        for model in crystal_models:
+            unit_cell = model.get_unit_cell()
+            in_band = lo <= unit_cell.volume() <= hi
+            n_out_of_band += not in_band
+            best_subgroup = find_matching_symmetry(
+                unit_cell, None, max_delta=5, target_bravais_str=target_bravais_str
+            )
+            accepted = best_subgroup is not None and best_subgroup[
+                "best_subsym"
+            ].unit_cell().is_similar_to(
+                target_unit_cell,
+                relative_length_tolerance=0.1,
+                absolute_angle_tolerance=5,
+            )
+            assert not (accepted and not in_band), unit_cell.parameters()
+            if accepted:
+                expected.append(model)
+
+        assert n_out_of_band
+        assert (
+            list(
+                combinations.filter_known_symmetry(
+                    crystal_models, target_symmetry=target_symmetry
+                )
+            )
+            == expected
+        )
