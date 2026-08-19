@@ -271,13 +271,18 @@ class SymmetryHandler:
         A = crystal_model.get_A()
 
         max_delta = self._max_delta
-        items = iotbx_converter(crystal_model.get_unit_cell(), max_delta=max_delta)
         target_sg_ref = target_space_group.info().reference_setting().group()
+        target_bravais = str(bravais_lattice(group=target_sg_ref))
+        items = iotbx_converter(
+            crystal_model.get_unit_cell(),
+            max_delta=max_delta,
+            target_bravais=target_bravais,
+        )
         best_angular_difference = 1e8
 
         best_subgroup = None
         for item in items:
-            if bravais_lattice(group=target_sg_ref) != item["bravais"]:
+            if target_bravais != item["bravais"]:
                 continue
             if item["max_angular_difference"] < best_angular_difference:
                 best_angular_difference = item["max_angular_difference"]
