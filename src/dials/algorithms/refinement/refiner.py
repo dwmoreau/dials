@@ -997,6 +997,12 @@ class Refiner:
             if scan.get_oscillation(deg=False)[1] != 0.0:
                 images_per_rad = 1.0 / abs(scan.get_oscillation(deg=False)[1])
 
+        # The table is tabulate-dominated and is built once per refinement run; skip it
+        # when the INFO message would be discarded. The multi-scan warning above is
+        # emitted either way, so this guard sits below it rather than at the call site.
+        if not logger.isEnabledFor(logging.INFO):
+            return
+
         for idetector, detector in enumerate(self._experiments.detectors()):
             if len(detector) == 1:
                 continue
