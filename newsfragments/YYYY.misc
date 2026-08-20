@@ -1,0 +1,1 @@
+``dials.stills_process``: ask ``iotbx_converter`` only for metric subgroups of the target Bravais type when applying a known symmetry, instead of building every subgroup and discarding most of them.
