@@ -416,12 +416,14 @@ class PredictionParameterisation:
         single matrices or vectors. In the scan-varying overload these will all be
         arrays."""
 
-        # D matrix array
-        D = flex.mat3_double(len(reflections))
+        # D matrix array, gathered by panel index. A masked assignment per panel costs
+        # one full-length comparison and one set_selected for every panel on the
+        # detector, which dominates for a many-panel detector; the gather is linear in
+        # the number of reflections instead.
         panels = reflections["panel"]
-        for ipanel, D_mat in enumerate([p.get_D_matrix() for p in experiment.detector]):
-            sel = panels == ipanel
-            D.set_selected(sel, D_mat)
+        D = flex.mat3_double([p.get_D_matrix() for p in experiment.detector]).select(
+            panels
+        )
 
         if "s0" in reflections:
             s0 = reflections["s0"]
