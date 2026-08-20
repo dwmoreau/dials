@@ -1,0 +1,1 @@
+``dials.stills_process``: build the per-model debug dumps and the refinement residual summary tables only when the log level will emit them, and cache the target Bravais type on ``SymmetryHandler``.

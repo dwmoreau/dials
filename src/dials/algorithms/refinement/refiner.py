@@ -1057,21 +1057,22 @@ class Refiner:
         # Do refinement and return history #
         ####################################
 
-        logger.debug("\nExperimental models before refinement:")
-        for i, beam in enumerate(self._experiments.beams()):
-            logger.debug(ordinal_number(i) + " " + str(beam))
-        for i, detector in enumerate(self._experiments.detectors()):
-            logger.debug(ordinal_number(i) + " " + str(detector))
-        for i, goniometer in enumerate(self._experiments.goniometers()):
-            if goniometer is None:
-                continue
-            logger.debug(ordinal_number(i) + " " + str(goniometer))
-        for i, scan in enumerate(self._experiments.scans()):
-            if scan is None:
-                continue
-            logger.debug(ordinal_number(i) + " " + str(scan))
-        for i, crystal in enumerate(self._experiments.crystals()):
-            logger.debug(ordinal_number(i) + " " + str(crystal))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("\nExperimental models before refinement:")
+            for i, beam in enumerate(self._experiments.beams()):
+                logger.debug(ordinal_number(i) + " " + str(beam))
+            for i, detector in enumerate(self._experiments.detectors()):
+                logger.debug(ordinal_number(i) + " " + str(detector))
+            for i, goniometer in enumerate(self._experiments.goniometers()):
+                if goniometer is None:
+                    continue
+                logger.debug(ordinal_number(i) + " " + str(goniometer))
+            for i, scan in enumerate(self._experiments.scans()):
+                if scan is None:
+                    continue
+                logger.debug(ordinal_number(i) + " " + str(scan))
+            for i, crystal in enumerate(self._experiments.crystals()):
+                logger.debug(ordinal_number(i) + " " + str(crystal))
 
         self._refinery.run()
 
@@ -1088,24 +1089,25 @@ class Refiner:
         # Perform post-run tasks to write the refined states back to the models
         self._update_models()
 
-        logger.debug("\nExperimental models after refinement:")
-        for i, beam in enumerate(self._experiments.beams()):
-            logger.debug(ordinal_number(i) + " " + str(beam))
-        for i, detector in enumerate(self._experiments.detectors()):
-            logger.debug(ordinal_number(i) + " " + str(detector))
-        for i, goniometer in enumerate(self._experiments.goniometers()):
-            if goniometer is None:
-                continue
-            logger.debug(ordinal_number(i) + " " + str(goniometer))
-        for i, scan in enumerate(self._experiments.scans()):
-            if scan is None:
-                continue
-            logger.debug(ordinal_number(i) + " " + str(scan))
-        for i, crystal in enumerate(self._experiments.crystals()):
-            logger.debug(ordinal_number(i) + " " + str(crystal))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("\nExperimental models after refinement:")
+            for i, beam in enumerate(self._experiments.beams()):
+                logger.debug(ordinal_number(i) + " " + str(beam))
+            for i, detector in enumerate(self._experiments.detectors()):
+                logger.debug(ordinal_number(i) + " " + str(detector))
+            for i, goniometer in enumerate(self._experiments.goniometers()):
+                if goniometer is None:
+                    continue
+                logger.debug(ordinal_number(i) + " " + str(goniometer))
+            for i, scan in enumerate(self._experiments.scans()):
+                if scan is None:
+                    continue
+                logger.debug(ordinal_number(i) + " " + str(scan))
+            for i, crystal in enumerate(self._experiments.crystals()):
+                logger.debug(ordinal_number(i) + " " + str(crystal))
 
-        # Report on the refined parameters
-        logger.debug(str(self._param_report))
+            # Report on the refined parameters
+            logger.debug(str(self._param_report))
 
         # Return the refinement history
         return self._refinery.history

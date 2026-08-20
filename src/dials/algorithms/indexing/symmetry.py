@@ -231,6 +231,16 @@ class SymmetryHandler:
         self.cb_op_primitive_inp = (
             self.cb_op_ref_inp * cb_op_reference_to_primitive.inverse()
         )
+        # The target symmetry is fixed for the lifetime of the handler, so its
+        # reference-setting group and Bravais type are too; apply_symmetry runs
+        # once per indexing attempt and needs both.
+        self._target_sg_ref = (
+            self.target_symmetry_primitive.space_group()
+            .info()
+            .reference_setting()
+            .group()
+        )
+        self._target_bravais = str(bravais_lattice(group=self._target_sg_ref))
 
         if self.target_symmetry_reference_setting:
             logger.debug(
@@ -266,13 +276,11 @@ class SymmetryHandler:
         ):
             return crystal, sgtbx.change_of_basis_op()
 
-        target_space_group = self.target_symmetry_primitive.space_group()
-
         A = crystal_model.get_A()
 
         max_delta = self._max_delta
-        target_sg_ref = target_space_group.info().reference_setting().group()
-        target_bravais = str(bravais_lattice(group=target_sg_ref))
+        target_sg_ref = self._target_sg_ref
+        target_bravais = self._target_bravais
         items = iotbx_converter(
             crystal_model.get_unit_cell(),
             max_delta=max_delta,

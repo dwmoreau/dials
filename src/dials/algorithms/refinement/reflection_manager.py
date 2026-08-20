@@ -871,6 +871,11 @@ class ReflectionManager:
             )
             return
 
+        # The summary tables cost several five_number_summary passes and a
+        # tabulate call; build them only when the INFO message will be emitted.
+        if not logger.isEnabledFor(logging.INFO):
+            return
+
         try:
             x_resid = l["x_resid"]
             y_resid = l["y_resid"]
@@ -969,6 +974,11 @@ class StillsReflectionManager(ReflectionManager):
             logger.warning(
                 "Unable to calculate summary statistics for zero observations"
             )
+            return
+
+        # The summary tables cost several five_number_summary passes and a
+        # tabulate call; build them only when the INFO message will be emitted.
+        if not logger.isEnabledFor(logging.INFO):
             return
 
         from scitbx.math import five_number_summary
@@ -1131,6 +1141,11 @@ class LaueReflectionManager(ReflectionManager):
             logger.warning(
                 "Unable to calculate summary statistics for zero observations"
             )
+            return
+
+        # The summary tables cost several five_number_summary passes and a
+        # tabulate call; build them only when the INFO message will be emitted.
+        if not logger.isEnabledFor(logging.INFO):
             return
 
         from scitbx.math import five_number_summary
