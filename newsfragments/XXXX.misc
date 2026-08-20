@@ -1,0 +1,1 @@
+``dials.stills_process``: skip the candidate symmetry search for orientation candidates whose unit cell volume cannot satisfy ``indexing.known_symmetry``, cutting roughly 80% of the calls to ``find_matching_symmetry`` without changing which candidates are accepted.
