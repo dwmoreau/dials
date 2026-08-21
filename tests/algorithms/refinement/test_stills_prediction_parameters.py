@@ -22,6 +22,7 @@ from dials.algorithms.refinement.parameterisation.prediction_parameters_stills i
     SphericalRelpStillsPredictionParameterisation,
     StillsPredictionParameterisation,
 )
+from dials.algorithms.refinement.prediction import managed_predictors
 from dials.algorithms.refinement.prediction.managed_predictors import (
     ExperimentsPredictorFactory,
     ScansRayPredictor,
@@ -341,3 +342,79 @@ def test_spherical_relp_stills_pred_param(tc):
                 else:
                     assert a == pytest.approx(b, abs=5e-6)
             print("OK")
+
+
+def _predict_over_orientations(tc, predictor, steps, monkeypatch):
+    """Predict repeatedly while the crystal orientation moves, as refinement does.
+
+    Returns the predicted positions at each step and the number of
+    StillsReflectionPredictor objects that were constructed.
+    """
+
+    built = []
+    original = managed_predictors.st
+
+    def counted(*args, **kwargs):
+        built.append(None)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(managed_predictors, "st", counted)
+
+    p_vals = tc.xlo_param.get_param_vals()
+    states = []
+    for step in range(steps):
+        tc.xlo_param.set_param_vals([v + step * 1.0e-3 for v in p_vals])
+        reflections = tc.reflections.copy()
+        predictor(reflections)
+        states.append(
+            (
+                list(reflections["xyzcal.mm"]),
+                list(reflections["delpsical.rad"]),
+                list(reflections["panel"]),
+            )
+        )
+    tc.xlo_param.set_param_vals(p_vals)
+
+    return states, len(built)
+
+
+def test_stills_predictor_reuse_matches_rebuilding(tc, monkeypatch):
+    """A predictor kept across predictions gives what rebuilding it gives."""
+
+    steps = 5
+
+    rebuilding = StillsExperimentsPredictor(tc.stills_experiments)
+    rebuilt_states, n_rebuilt = _predict_over_orientations(
+        tc, rebuilding, steps, monkeypatch
+    )
+
+    reusing = StillsExperimentsPredictor(tc.stills_experiments)
+    reusing.set_static_models(True)
+    reused_states, n_reused = _predict_over_orientations(
+        tc, reusing, steps, monkeypatch
+    )
+
+    assert n_rebuilt == steps * len(tc.stills_experiments)
+    assert n_reused == len(tc.stills_experiments)
+    assert reused_states == rebuilt_states
+
+
+def test_stills_predictor_follows_a_moved_detector(tc, monkeypatch):
+    """Without the declaration, predictions track a detector that is being refined."""
+
+    predictor = StillsExperimentsPredictor(tc.stills_experiments)
+
+    reflections = tc.reflections.copy()
+    predictor(reflections)
+    before = list(reflections["xyzcal.mm"])
+
+    p_vals = tc.det_param.get_param_vals()
+    tc.det_param.set_param_vals([p_vals[0] + 1.0] + list(p_vals[1:]))
+    try:
+        reflections = tc.reflections.copy()
+        predictor(reflections)
+        after = list(reflections["xyzcal.mm"])
+    finally:
+        tc.det_param.set_param_vals(p_vals)
+
+    assert after != before
