@@ -98,7 +98,7 @@ class TwoThetaReflectionManager(ReflectionManager):
 
 
 class TwoThetaExperimentsPredictor(ExperimentsPredictor):
-    def _predict_one_experiment(self, experiment, reflections):
+    def _predict_one_experiment(self, experiment, reflections, iexp):
         B = flex.mat3_double(len(reflections), experiment.crystal.get_B())
         r0 = B * reflections["miller_index"].as_vec3_double()
         r0len = r0.norms()

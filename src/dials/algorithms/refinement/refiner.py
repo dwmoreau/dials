@@ -441,6 +441,16 @@ class RefinerFactory:
         # if reduction was done, constraints_manager will have changed
         constraints_manager = autoreduce.constraints_manager
 
+        # Only the crystal models change during refinement if nothing else has free
+        # parameters left, which lets the predictor keep the state it captures
+        ref_predictor.set_static_models(
+            all(
+                p.num_free() == 0
+                for p in pred_param.get_beam_parameterisations()
+                + pred_param.get_detector_parameterisations()
+            )
+        )
+
         # Build a restraints parameterisation (if requested).
         # Only unit cell restraints are supported at the moment.
         restraints_parameterisation = cls.config_restraints(

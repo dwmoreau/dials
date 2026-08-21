@@ -75,6 +75,13 @@ class ExperimentsPredictor:
         """Construct by linking to instances of experimental model classes"""
 
         self._experiments = experiments
+        self._static_models = False
+
+    def set_static_models(self, static):
+        """Declare whether the experimental models other than the crystals keep the
+        same state between predictions."""
+
+        self._static_models = static
 
     def __call__(self, reflections):
         """Predict for all reflections at the current model geometry"""
@@ -84,7 +91,7 @@ class ExperimentsPredictor:
             sel = reflections["id"] == iexp
             refs = reflections.select(sel)
 
-            self._predict_one_experiment(e, refs)
+            self._predict_one_experiment(e, refs, iexp)
             refs = self._post_predict_one_experiment(e, refs)
 
             # write predictions back to overall reflections
@@ -94,7 +101,7 @@ class ExperimentsPredictor:
 
         return reflections
 
-    def _predict_one_experiment(self, experiment, reflections):
+    def _predict_one_experiment(self, experiment, reflections, iexp):
         raise NotImplementedError()
 
     def _post_predict_one_experiment(self, experiment, reflections):
@@ -108,7 +115,7 @@ class ExperimentsPredictor:
 
 
 class ScansExperimentsPredictor(ExperimentsPredictor):
-    def _predict_one_experiment(self, experiment, reflections):
+    def _predict_one_experiment(self, experiment, reflections, iexp):
         # scan-varying
         if "ub_matrix" in reflections:
             predictor = sv(experiment)
@@ -160,14 +167,25 @@ class ScansExperimentsPredictor(ExperimentsPredictor):
 class StillsExperimentsPredictor(ExperimentsPredictor):
     spherical_relp_model = False
 
-    def _predict_one_experiment(self, experiment, reflections):
-        predictor = st(experiment, spherical_relp=self.spherical_relp_model)
+    def __init__(self, experiments):
+        super().__init__(experiments)
+        self._predictors = {}
+
+    def _predict_one_experiment(self, experiment, reflections, iexp):
+        # A StillsReflectionPredictor takes the beam and detector state by value, so it
+        # may be kept only while those models are unchanged. The UB matrix is passed to
+        # for_reflection_table and so is free to vary.
+        predictor = self._predictors.get(iexp) if self._static_models else None
+        if predictor is None:
+            predictor = st(experiment, spherical_relp=self.spherical_relp_model)
+            if self._static_models:
+                self._predictors[iexp] = predictor
         UB = experiment.crystal.get_A()
         predictor.for_reflection_table(reflections, UB)
 
 
 class LaueExperimentsPredictor(ExperimentsPredictor):
-    def _predict_one_experiment(self, experiment, reflections):
+    def _predict_one_experiment(self, experiment, reflections, iexp):
         min_s0_idx = min(
             range(len(reflections["wavelength"])),
             key=reflections["wavelength"].__getitem__,

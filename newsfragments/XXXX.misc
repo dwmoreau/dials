@@ -1,0 +1,5 @@
+Stills refinement: keep the reflection predictor for the life of a refinement instead of
+rebuilding it for every prediction. The predictor takes a copy of the beam and detector
+state, so it is kept only when neither model has free parameters left to refine; the UB
+matrix is supplied per prediction and is unaffected. Most noticeable on many-panel
+detectors, where the detector copy dominates the construction.
