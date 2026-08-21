@@ -56,14 +56,26 @@ class ExtractPixelsFromImage:
         :param max_strong_pixel_fraction: The maximum fraction of pixels allowed
         """
         self.threshold_function = threshold_function
-        self.imageset = imageset
-        self.mask = mask
         self.region_of_interest = region_of_interest
         self.max_strong_pixel_fraction = max_strong_pixel_fraction
         self.compute_mean_background = compute_mean_background
+        self.update_imageset(imageset, mask)
+
+    def update_imageset(self, imageset, mask):
+        """
+        Point the class at another imageset.
+
+        The mask given here is the static part, fixed by the detector and the
+        parameters. The dynamic part -- which pixels overloaded on this exposure --
+        is read from the imageset for every image in __call__.
+
+        :param imageset: The imageset to extract from
+        :param mask: The image mask
+        """
+        self.imageset = imageset
+        self.mask = mask
         if self.mask is not None:
-            detector = self.imageset.get_detector()
-            assert len(self.mask) == len(detector)
+            assert len(self.mask) == len(self.imageset.get_detector())
 
     def __call__(self, index):
         """
@@ -96,7 +108,10 @@ class ExtractPixelsFromImage:
             f"Number of masked pixels for image {index}: {sum(m.count(False) for m in mask)}",
         )
 
-        # Add the images to the pixel lists
+        # Add the images to the pixel lists. Panels of one image that share a shape
+        # share a thresholder through this cache, which dies with the call so that
+        # the summed-area tables inside it cannot outlive the image.
+        algorithm_cache = {}
         num_strong = 0
         average_background = 0
         for i_panel, (im, mk) in enumerate(zip(image, mask)):
@@ -119,12 +134,17 @@ class ExtractPixelsFromImage:
                     imageset=self.imageset,
                     i_panel=i_panel,
                     region_of_interest=self.region_of_interest,
+                    algorithm_cache=algorithm_cache,
                 )
                 threshold_mask = flex.bool(im.accessor(), False)
                 threshold_mask[y0:y1, x0:x1] = tm_roi
             else:
                 threshold_mask = self.threshold_function.compute_threshold(
-                    im, mk, imageset=self.imageset, i_panel=i_panel
+                    im,
+                    mk,
+                    imageset=self.imageset,
+                    i_panel=i_panel,
+                    algorithm_cache=algorithm_cache,
                 )
 
             # Add the pixel list
@@ -369,7 +389,6 @@ class ExtractSpots:
     def __init__(
         self,
         threshold_function=None,
-        mask=None,
         region_of_interest=None,
         max_strong_pixel_fraction=0.1,
         compute_mean_background=False,
@@ -383,19 +402,22 @@ class ExtractSpots:
         no_shoeboxes_2d=False,
         min_chunksize=50,
         write_hot_pixel_mask=False,
+        reuse_extractor=False,
     ):
         """
         Initialise the class with the strategy
 
         :param threshold_function: The image thresholding strategy
-        :param mask: The mask to use
         :param mp_method: The multi processing method
         :param nproc: The number of processors
         :param max_strong_pixel_fraction: The maximum number of strong pixels
+        :param reuse_extractor: Keep the per-image extractor between calls and point
+                                it at each new imageset, rather than building one per
+                                call. Only for a mask that is the same for every
+                                imageset, since the extractor holds one.
         """
         # Set the required strategies
         self.threshold_function = threshold_function
-        self.mask = mask
         self.mp_method = mp_method
         self.mp_chunksize = mp_chunksize
         self.mp_nproc = mp_nproc
@@ -409,18 +431,21 @@ class ExtractSpots:
         self.no_shoeboxes_2d = no_shoeboxes_2d
         self.min_chunksize = min_chunksize
         self.write_hot_pixel_mask = write_hot_pixel_mask
+        self.reuse_extractor = reuse_extractor
+        self.function = None
 
-    def __call__(self, imageset):
+    def __call__(self, imageset, mask):
         """
         Find the spots in the imageset
 
         :param imageset: The imageset to process
+        :param mask: The static part of the mask for this imageset
         :return: The list of spot shoeboxes
         """
         if not self.no_shoeboxes_2d:
-            return self._find_spots(imageset)
+            return self._find_spots(imageset, mask)
         else:
-            return self._find_spots_2d_no_shoeboxes(imageset)
+            return self._find_spots_2d_no_shoeboxes(imageset, mask)
 
     def _compute_chunksize(self, nimg, nproc, min_chunksize):
         """
@@ -447,7 +472,7 @@ class ExtractSpots:
             extra = int(math.ceil(remainder / (chunksize * n_batches)))
             return chunksize + extra
 
-    def _find_spots(self, imageset):
+    def _find_spots(self, imageset, mask):
         """
         Find the spots in the imageset
 
@@ -484,14 +509,17 @@ class ExtractSpots:
         assert mp_chunksize > 0, "Invalid chunk size"
 
         # The extract pixels function
-        function = ExtractPixelsFromImage(
-            imageset=imageset,
-            threshold_function=self.threshold_function,
-            mask=self.mask,
-            max_strong_pixel_fraction=self.max_strong_pixel_fraction,
-            compute_mean_background=self.compute_mean_background,
-            region_of_interest=self.region_of_interest,
-        )
+        if self.function is None or not self.reuse_extractor:
+            self.function = ExtractPixelsFromImage(
+                imageset=imageset,
+                threshold_function=self.threshold_function,
+                mask=mask,
+                max_strong_pixel_fraction=self.max_strong_pixel_fraction,
+                compute_mean_background=self.compute_mean_background,
+                region_of_interest=self.region_of_interest,
+            )
+        else:
+            self.function.update_imageset(imageset, mask)
 
         # The indices to iterate over
         indices = list(range(len(imageset)))
@@ -517,7 +545,7 @@ class ExtractSpots:
                     plabeller.add(plist)
 
             batch_multi_node_parallel_map(
-                func=ExtractSpotsParallelTask(function),
+                func=ExtractSpotsParallelTask(self.function),
                 iterable=indices,
                 nproc=mp_nproc,
                 njobs=mp_njobs,
@@ -527,7 +555,7 @@ class ExtractSpots:
             )
         else:
             for task in indices:
-                result = function(task)
+                result = self.function(task)
                 assert len(pixel_labeller) == len(result), "Inconsistent size"
                 for plabeller, plist in zip(pixel_labeller, result):
                     plabeller.add(plist)
@@ -543,7 +571,7 @@ class ExtractSpots:
             write_hot_pixel_mask=self.write_hot_pixel_mask,
         )
 
-    def _find_spots_2d_no_shoeboxes(self, imageset):
+    def _find_spots_2d_no_shoeboxes(self, imageset, mask):
         """
         Find the spots in the imageset
 
@@ -575,17 +603,20 @@ class ExtractSpots:
         assert mp_chunksize > 0, "Invalid chunk size"
 
         # The extract pixels function
-        function = ExtractPixelsFromImage2DNoShoeboxes(
-            imageset=imageset,
-            threshold_function=self.threshold_function,
-            mask=self.mask,
-            max_strong_pixel_fraction=self.max_strong_pixel_fraction,
-            compute_mean_background=self.compute_mean_background,
-            region_of_interest=self.region_of_interest,
-            min_spot_size=self.min_spot_size,
-            max_spot_size=self.max_spot_size,
-            filter_spots=self.filter_spots,
-        )
+        if self.function is None or not self.reuse_extractor:
+            self.function = ExtractPixelsFromImage2DNoShoeboxes(
+                imageset=imageset,
+                threshold_function=self.threshold_function,
+                mask=mask,
+                max_strong_pixel_fraction=self.max_strong_pixel_fraction,
+                compute_mean_background=self.compute_mean_background,
+                region_of_interest=self.region_of_interest,
+                min_spot_size=self.min_spot_size,
+                max_spot_size=self.max_spot_size,
+                filter_spots=self.filter_spots,
+            )
+        else:
+            self.function.update_imageset(imageset, mask)
 
         # The indices to iterate over
         indices = list(range(len(imageset)))
@@ -610,7 +641,7 @@ class ExtractSpots:
                 result[0][0] = None
 
             batch_multi_node_parallel_map(
-                func=ExtractSpotsParallelTask(function),
+                func=ExtractSpotsParallelTask(self.function),
                 iterable=indices,
                 nproc=mp_nproc,
                 njobs=mp_njobs,
@@ -620,7 +651,7 @@ class ExtractSpots:
             )
         else:
             for task in indices:
-                reflections.extend(function(task)[0])
+                reflections.extend(self.function(task)[0])
 
         # Return the reflections
         return reflections, None
@@ -652,6 +683,7 @@ class SpotFinder:
         no_shoeboxes_2d=False,
         min_chunksize=50,
         is_stills=False,
+        static_mask=False,
     ):
         """
         Initialise the class.
@@ -661,6 +693,10 @@ class SpotFinder:
         :param scan_range: The scan range to find spots over
         :param is_stills:   [ADVANCED] Force still-handling of experiment
                             ID remapping for dials.stills_process.
+        :param static_mask: The generated mask is the same for every imageset with
+                            this detector, so it can be built once and reused. False
+                            whenever a resolution-based mask is configured, since
+                            those move with the wavelength.
         """
 
         # Set the filter and some other stuff
@@ -683,6 +719,9 @@ class SpotFinder:
         self.no_shoeboxes_2d = no_shoeboxes_2d
         self.min_chunksize = min_chunksize
         self.is_stills = is_stills
+        self.static_mask = static_mask
+        self.extract_spots = None
+        self.imageset_mask = None
 
     def find_spots(self, experiments: ExperimentList) -> flex.reflection_table:
         """
@@ -766,29 +805,37 @@ class SpotFinder:
         :param imageset: The imageset to process
         :return: The observed spots
         """
-        # The input mask
-        mask = self.mask_generator(imageset)
-        if self.mask is not None:
-            mask = tuple(m1 & m2 for m1, m2 in zip(mask, self.mask))
+        # The input mask. It is the same for every imageset of a series of stills
+        # sharing a detector, unless a resolution-based mask is configured.
+        reuse = self.is_stills and self.static_mask
+        if reuse and self.imageset_mask is not None:
+            mask = self.imageset_mask
+        else:
+            mask = self.mask_generator(imageset)
+            if self.mask is not None:
+                mask = tuple(m1 & m2 for m1, m2 in zip(mask, self.mask))
+            if reuse:
+                self.imageset_mask = mask
 
         # Set the spot finding algorithm
-        extract_spots = ExtractSpots(
-            threshold_function=self.threshold_function,
-            mask=mask,
-            region_of_interest=self.region_of_interest,
-            max_strong_pixel_fraction=self.max_strong_pixel_fraction,
-            compute_mean_background=self.compute_mean_background,
-            mp_method=self.mp_method,
-            mp_nproc=self.mp_nproc,
-            mp_njobs=self.mp_njobs,
-            mp_chunksize=self.mp_chunksize,
-            min_spot_size=self.min_spot_size,
-            max_spot_size=self.max_spot_size,
-            filter_spots=self.filter_spots,
-            no_shoeboxes_2d=self.no_shoeboxes_2d,
-            min_chunksize=self.min_chunksize,
-            write_hot_pixel_mask=self.write_hot_mask,
-        )
+        if self.extract_spots is None or not self.is_stills:
+            self.extract_spots = ExtractSpots(
+                threshold_function=self.threshold_function,
+                region_of_interest=self.region_of_interest,
+                max_strong_pixel_fraction=self.max_strong_pixel_fraction,
+                compute_mean_background=self.compute_mean_background,
+                mp_method=self.mp_method,
+                mp_nproc=self.mp_nproc,
+                mp_njobs=self.mp_njobs,
+                mp_chunksize=self.mp_chunksize,
+                min_spot_size=self.min_spot_size,
+                max_spot_size=self.max_spot_size,
+                filter_spots=self.filter_spots,
+                no_shoeboxes_2d=self.no_shoeboxes_2d,
+                min_chunksize=self.min_chunksize,
+                write_hot_pixel_mask=self.write_hot_mask,
+                reuse_extractor=reuse,
+            )
 
         # Get the max scan range
         if isinstance(imageset, ImageSequence):
@@ -820,9 +867,9 @@ class SpotFinder:
                 j0 -= imageset.get_array_range()[0]
                 j1 -= imageset.get_array_range()[0]
             if len(imageset) == 1:
-                r, h = extract_spots(imageset)
+                r, h = self.extract_spots(imageset, mask)
             else:
-                r, h = extract_spots(imageset[j0:j1])
+                r, h = self.extract_spots(imageset[j0:j1], mask)
             reflections.extend(r)
             if h is not None:
                 for h1, h2 in zip(hot_pixels, h):

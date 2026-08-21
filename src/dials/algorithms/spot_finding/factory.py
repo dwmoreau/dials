@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 
+import libtbx
 from dxtbx.imageset import ImageSequence
 from iotbx.phil import parse
 
@@ -422,6 +423,59 @@ class SpotDensityFilter:
         return flags
 
 
+def _mask_depends_on_wavelength(filter_params):
+    """
+    Determine whether generate_mask() can return a different mask for two imagesets
+    that share a detector but not a wavelength.
+
+    Every resolution-based mask is a set of pixels bounded by a d-spacing, and d
+    scales with the wavelength, so any of these being set makes the generated mask a
+    function of the beam as well as of the detector.
+
+    :param filter_params: An extract of dials.util.masking.phil_scope
+    :return: True if any resolution-based mask is configured
+    """
+    if filter_params.d_min is not None or filter_params.d_max is not None:
+        return True
+    if filter_params.ice_rings.filter:
+        return True
+    try:
+        return any(drange is not None for drange in filter_params.resolution_range)
+    except TypeError:
+        return filter_params.resolution_range is not None
+
+
+def configure_spotfinder(experiments, params, is_stills=False):
+    """
+    Build the spot finder described by the parameters.
+
+    The result depends on the parameters and on the detector, so for a series of
+    stills sharing a setup it can be built once and reused.
+
+    :param experiments: The experiments
+    :param params: The input parameters
+    :param is_stills:   [ADVANCED] Force still-handling of experiment
+                        ID remapping for dials.stills_process.
+    :return: The spot finder instance
+    """
+    if params.spotfinder.filter.min_spot_size is libtbx.Auto:
+        detector = experiments[0].imageset.get_detector()
+        if detector[0].get_type() == "SENSOR_PAD":
+            # smaller default value for pixel array detectors
+            params.spotfinder.filter.min_spot_size = 3
+        else:
+            params.spotfinder.filter.min_spot_size = 6
+        logger.info(
+            "Setting spotfinder.filter.min_spot_size=%i",
+            params.spotfinder.filter.min_spot_size,
+        )
+
+    logger.info("Configuring spot finder from input parameters")
+    return SpotFinderFactory.from_parameters(
+        experiments=experiments, params=params, is_stills=is_stills
+    )
+
+
 class SpotFinderFactory:
     """
     Factory class to create spot finders
@@ -557,6 +611,7 @@ class SpotFinderFactory:
             no_shoeboxes_2d=no_shoeboxes_2d,
             min_chunksize=params.spotfinder.mp.min_chunksize,
             is_stills=is_stills,
+            static_mask=not _mask_depends_on_wavelength(params.spotfinder.filter),
         )
 
     @staticmethod

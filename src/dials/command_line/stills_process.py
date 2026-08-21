@@ -916,6 +916,7 @@ class Processor:
     def __init__(self, params, composite_tag=None, rank=0):
         self.params = params
         self.composite_tag = composite_tag
+        self.spot_finder = None
 
         # The convention is to put %s in the phil parameter to add a tag to
         # each output datafile. Save the initial templates here.
@@ -1218,9 +1219,17 @@ The detector is reporting a gain of {panel.get_gain():f} but you have also suppl
         logger.info("Finding Strong Spots")
         logger.info("*" * 80)
 
-        # Find the strong spots
+        # Find the strong spots. The spot finder depends on the parameters and the
+        # detector, both of which every still in this process shares, so it is built
+        # on the first still and reused.
+        if self.spot_finder is None:
+            from dials.algorithms.spot_finding.factory import configure_spotfinder
+
+            self.spot_finder = configure_spotfinder(
+                experiments, self.params, is_stills=True
+            )
         observed = flex.reflection_table.from_observations(
-            experiments, self.params, is_stills=True
+            experiments, self.params, is_stills=True, spotfinder=self.spot_finder
         )
 
         # Reset z coordinates for dials.image_viewer; see Issues #226 for details

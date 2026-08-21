@@ -139,7 +139,7 @@ class _:
         return result
 
     @staticmethod
-    def from_observations(experiments, params=None, is_stills=False):
+    def from_observations(experiments, params=None, is_stills=False, spotfinder=None):
         """
         Construct a reflection table from observations.
 
@@ -149,27 +149,19 @@ class _:
                             ID remapping for dials.stills_process. Do
                             not use for general processing unless you
                             know all the implications.
+        :param spotfinder: A spot finder built by
+                           dials.algorithms.spot_finding.factory.configure_spotfinder
+                           for these parameters and this detector. One is built here
+                           if none is given.
         :return: The reflection table of observations
         """
-        from dials.algorithms.spot_finding.factory import SpotFinderFactory
+        from dials.algorithms.spot_finding.factory import configure_spotfinder
 
         if params is None:
             from dials.command_line.find_spots import phil_scope
             from dials.util.phil import parse
 
             params = phil_scope.fetch(source=parse("")).extract()
-
-        if params.spotfinder.filter.min_spot_size is libtbx.Auto:
-            detector = experiments[0].imageset.get_detector()
-            if detector[0].get_type() == "SENSOR_PAD":
-                # smaller default value for pixel array detectors
-                params.spotfinder.filter.min_spot_size = 3
-            else:
-                params.spotfinder.filter.min_spot_size = 6
-            logger.info(
-                "Setting spotfinder.filter.min_spot_size=%i",
-                params.spotfinder.filter.min_spot_size,
-            )
 
         # Set images to exclude in the imagesets
         if params.spotfinder.exclude_images_multiple:
@@ -180,11 +172,8 @@ class _:
             )
         experiments = set_invalid_images(experiments, params.spotfinder.exclude_images)
 
-        # Get the spot-finder from the input parameters
-        logger.info("Configuring spot finder from input parameters")
-        spotfinder = SpotFinderFactory.from_parameters(
-            experiments=experiments, params=params, is_stills=is_stills
-        )
+        if spotfinder is None:
+            spotfinder = configure_spotfinder(experiments, params, is_stills=is_stills)
 
         # Find the spots
         return spotfinder.find_spots(experiments)

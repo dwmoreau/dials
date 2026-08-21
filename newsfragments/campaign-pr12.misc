@@ -1,0 +1,1 @@
+``dials.stills_process``: build the spot finder, its static mask and the thresholding algorithm once per process rather than once per still.

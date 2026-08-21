@@ -43,24 +43,28 @@ class DispersionThresholdStrategy(ThresholdStrategy):
         # Save the constant gain
         self._gain_map = None
 
-        # Create a buffer
-        self.algorithm = {}
-
-    def __call__(self, image, mask):
+    def __call__(self, image, mask, algorithm_cache=None):
         """
         Call the thresholding function
 
         :param image: The image to process
         :param mask: The mask to use
+        :param algorithm_cache: A dict in which to keep the thresholder, so that
+                                images of the same shape reuse it. It holds a
+                                summed-area table per shape, so its lifetime bounds
+                                that of the table; a private one is used if none is
+                                given.
         :return: The thresholded image
         """
         from dials.algorithms.image import threshold
         from dials.array_family import flex
 
         # Initialise the algorithm
+        if algorithm_cache is None:
+            algorithm_cache = {}
         try:
-            algorithm = self.algorithm[image.all()]
-        except Exception:
+            algorithm = algorithm_cache[image.all()]
+        except KeyError:
             algorithm = threshold.DispersionThreshold(
                 image.all(),
                 self._kernel_size,
@@ -69,13 +73,13 @@ class DispersionThresholdStrategy(ThresholdStrategy):
                 self._threshold,
                 self._min_count,
             )
-            self.algorithm[image.all()] = algorithm
+            algorithm_cache[image.all()] = algorithm
 
         # Set the gain
         if self._gain is not None:
             assert self._gain > 0
-            self._gain_map = flex.double(image.accessor(), self._gain)
-            self._gain = None
+            if self._gain_map is None or self._gain_map.all() != image.all():
+                self._gain_map = flex.double(image.accessor(), self._gain)
 
         # Compute the threshold
         result = flex.bool(flex.grid(image.all()))
@@ -112,24 +116,28 @@ class DispersionExtendedThresholdStrategy(ThresholdStrategy):
         # Save the constant gain
         self._gain_map = None
 
-        # Create a buffer
-        self.algorithm = {}
-
-    def __call__(self, image, mask):
+    def __call__(self, image, mask, algorithm_cache=None):
         """
         Call the thresholding function
 
         :param image: The image to process
         :param mask: The mask to use
+        :param algorithm_cache: A dict in which to keep the thresholder, so that
+                                images of the same shape reuse it. It holds a
+                                summed-area table per shape, so its lifetime bounds
+                                that of the table; a private one is used if none is
+                                given.
         :return: The thresholded image
         """
         from dials.algorithms.image import threshold
         from dials.array_family import flex
 
         # Initialise the algorithm
+        if algorithm_cache is None:
+            algorithm_cache = {}
         try:
-            algorithm = self.algorithm[image.all()]
-        except Exception:
+            algorithm = algorithm_cache[image.all()]
+        except KeyError:
             algorithm = threshold.DispersionExtendedThreshold(
                 image.all(),
                 self._kernel_size,
@@ -138,13 +146,13 @@ class DispersionExtendedThresholdStrategy(ThresholdStrategy):
                 self._threshold,
                 self._min_count,
             )
-            self.algorithm[image.all()] = algorithm
+            algorithm_cache[image.all()] = algorithm
 
         # Set the gain
         if self._gain is not None:
             assert self._gain > 0
-            self._gain_map = flex.double(image.accessor(), self._gain)
-            self._gain = None
+            if self._gain_map is None or self._gain_map.all() != image.all():
+                self._gain_map = flex.double(image.accessor(), self._gain)
 
         # Compute the threshold
         result = flex.bool(flex.grid(image.all()))
