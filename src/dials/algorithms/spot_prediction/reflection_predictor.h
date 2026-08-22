@@ -25,6 +25,7 @@
 #include <dxtbx/model/scan_helpers.h>
 #include <dials/array_family/reflection_table.h>
 #include <dials/algorithms/spot_prediction/index_generator.h>
+#include <dials/algorithms/spot_prediction/stills_index_generator.h>
 #include <dials/algorithms/spot_prediction/reeke_index_generator.h>
 #include <dials/algorithms/spot_prediction/ray_predictor.h>
 #include <dials/algorithms/spot_prediction/scan_varying_ray_predictor.h>
@@ -967,7 +968,8 @@ namespace dials { namespace algorithms {
       // predict the rays and append to the reflection table
       vec3<double> s0 = beam_->get_s0();
       double eps_cut = ewald_offset_cutoff(ub, 0.0015);
-      IndexGenerator indices(unit_cell_, space_group_type_, dmin_);
+      StillsIndexGenerator indices(
+        unit_cell_, space_group_type_, dmin_, ub, s0, eps_cut);
       for (;;) {
         miller_index h = indices.next();
         if (h.is_zero()) {
@@ -1258,7 +1260,8 @@ namespace dials { namespace algorithms {
       vec3<double> s0 = beam_->get_s0();
       double eps_cut = ewald_offset_cutoff(
         ub, (dmin_ / ML_domain_size_ang_) + (ML_half_mosaicity_deg_ * pi_180 / 2));
-      IndexGenerator indices(unit_cell_, space_group_type_, dmin_);
+      StillsIndexGenerator indices(
+        unit_cell_, space_group_type_, dmin_, ub, s0, eps_cut);
       for (;;) {
         miller_index h = indices.next();
         if (h.is_zero()) {
@@ -1330,7 +1333,8 @@ namespace dials { namespace algorithms {
       // predict the rays and append to the reflection table
       vec3<double> s0 = beam_->get_s0();
       double eps_cut = ewald_offset_cutoff(ub, 0.0015);
-      IndexGenerator indices(unit_cell_, space_group_type_, dmin_);
+      StillsIndexGenerator indices(
+        unit_cell_, space_group_type_, dmin_, ub, s0, eps_cut);
       for (;;) {
         miller_index h = indices.next();
         if (h.is_zero()) {

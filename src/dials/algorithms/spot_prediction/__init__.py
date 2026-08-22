@@ -17,6 +17,7 @@ from dials_algorithms_spot_prediction_ext import (
     ScanVaryingRayPredictor,
     SphericalRelpStillsReflectionPredictor,
     StillsDeltaPsiReflectionPredictor,
+    StillsIndexGenerator,
     StillsRayPredictor,
     ray_intersection,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "ScanVaryingReflectionPredictor",
     "SphericalRelpStillsReflectionPredictor",
     "StillsDeltaPsiReflectionPredictor",
+    "StillsIndexGenerator",
     "StillsRayPredictor",
     "StillsReflectionPredictor",
     "LaueRayPredictor",

@@ -1,2 +1,2 @@
-``dials.stills_process``: reject Miller indices that cannot diffract before predicting
-a ray for them, making stills reflection prediction 2-4x faster.
+``dials.stills_process``: predict stills reflections by walking the Ewald shell rather
+than the whole resolution sphere, making reflection prediction 100-300x faster.
