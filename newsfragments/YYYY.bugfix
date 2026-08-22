@@ -1,0 +1,4 @@
+``dials.stills_process``: run the ``test_sacla_h5`` MPI test under MPI. Its three phil
+arguments were passed to ``mpirun`` as one argv item, which libtbx parsed as a bare
+``mp.method`` with no selection, so ``mp.composite_stride`` and ``output.logging_dir``
+were dropped and the four ranks each processed all four images independently.

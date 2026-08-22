@@ -158,6 +158,11 @@ def test_sacla_h5(dials_data, tmp_path, control_flags, in_memory=False):
             )
         )
 
+        if use_mpi:
+            # Composite output plus a stride gather, with the strong reflections not
+            # written: the empty strong table is remapped alongside these experiments.
+            f.write("output.experiments_filename=%s_imported.expt\n")
+
         if known_orientations:
             known_orientations_path = os.path.join(
                 sacla_path, "SACLA-MPCCD-run266702-0-subset-known_orientations.expt"
@@ -174,7 +179,9 @@ def test_sacla_h5(dials_data, tmp_path, control_flags, in_memory=False):
             "-n",
             "4",
             "dials.stills_process",
-            "mp.method=mpi mp.composite_stride=4 output.logging_dir=.",
+            "mp.method=mpi",
+            "mp.composite_stride=4",
+            "output.logging_dir=.",
         ]
     else:
         command = [shutil.which("dials.stills_process")]
@@ -182,26 +189,38 @@ def test_sacla_h5(dials_data, tmp_path, control_flags, in_memory=False):
     result = subprocess.run(command, cwd=tmp_path, capture_output=True)
     assert not result.returncode and not result.stderr
 
-    def test_refl_table(result_filename, ranges, ids=None):
+    def test_refl_table(result_filename, ranges, ids=None, ordered=True):
         if ids is None:
             ids = {0, 1, 2, 3}
         table = flex.reflection_table.from_file(result_filename)
+        counts = [len(table.select(table["id"] == i)) for i in range(len(ranges))]
+        if not ordered:
+            # The composite gather receives from MPI.ANY_SOURCE, so which experiment
+            # lands at which id is fixed at run time.
+            counts, ranges = sorted(counts), sorted(ranges)
         for expt_id, (min_, max_) in enumerate(ranges):
-            subset = table.select(table["id"] == expt_id)
-            n_refl = len(subset)
+            n_refl = counts[expt_id]
             assert min_ <= n_refl < max_, (result_filename, expt_id, len(table))
         assert "id" in table
         assert set(table["id"]) == ids
+
+    if use_mpi:
+        imported = ExperimentListFactory.from_json_file(
+            tmp_path / "idx-0000_imported.expt", check_format=False
+        )
+        assert len(imported) == 4
 
     # large ranges to handle platform-specific differences
     if control_flags in [("use_mpi"), ()]:
         test_refl_table(
             tmp_path / "idx-0000_integrated.refl",
             [(140, 160), (575, 600), (420, 445), (485, 510)],
+            ordered=not use_mpi,
         )
         test_refl_table(
             tmp_path / "idx-0000_coset6.refl",
             [(145, 160), (545, 570), (430, 455), (490, 515)],
+            ordered=not use_mpi,
         )
     elif control_flags == ("known_orientations"):
         test_refl_table(
