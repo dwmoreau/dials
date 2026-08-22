@@ -182,3 +182,163 @@ def generate_reflections(detector, beam, scan, experiment, num):
     rlist["shoebox"] = flex.shoebox(rlist["panel"], rlist["bbox"])
     rlist["shoebox"].allocate_data_with_value(MaskCode.Valid)
     return rlist
+
+
+def _stills_detector_and_beam():
+    from dxtbx.model import ParallaxCorrectedPxMmStrategy
+    from dxtbx.model.beam import BeamFactory
+    from dxtbx.model.detector import DetectorFactory
+
+    beam = BeamFactory.simple(wavelength=1)
+    detector = DetectorFactory.simple(
+        sensor=DetectorFactory.sensor("PAD"),
+        distance=150,
+        beam_centre=[50, 50],
+        fast_direction="+x",
+        slow_direction="+y",
+        pixel_size=[0.1, 0.1],
+        image_size=[1000, 1000],
+    )
+    for panel in detector:
+        panel.set_px_mm_strategy(ParallaxCorrectedPxMmStrategy(0.5, 0.32))
+    return detector, beam
+
+
+def _stills_shoeboxes(detector, beam):
+    """Shoeboxes of deliberately mixed sizes, including the 1x1 degenerate case."""
+    from dials.algorithms.shoebox import MaskCode
+
+    s0_length = matrix.col(beam.get_s0()).length()
+    sizes = [(1, 1), (1, 7), (7, 1), (2, 2), (5, 9), (12, 3), (9, 9), (20, 15)]
+    bbox = flex.int6()
+    s1 = flex.vec3_double()
+    for index, (width, height) in enumerate(sizes):
+        x0 = 200 + 37 * index
+        y0 = 150 + 53 * index
+        bbox.append((x0, x0 + width, y0, y0 + height, 0, 1))
+        centre = detector[0].get_pixel_lab_coord((x0 + 0.5 * width, y0 + 0.5 * height))
+        s1.append(tuple(matrix.col(centre).normalize() * s0_length))
+
+    panel = flex.size_t(len(bbox), 0)
+    shoeboxes = flex.shoebox(panel, bbox, allocate=True)
+    shoeboxes.allocate_data_with_value(MaskCode.Valid)
+    return shoeboxes, s1, panel
+
+
+def _reference_dxy(detector, beam, bbox, s1, delta_b):
+    """The corner loop written out, converting one coordinate at a time."""
+    from dials.algorithms.profile_model.gaussian_rs import CoordinateSystem2d
+
+    s0 = beam.get_s0()
+    s0_length = matrix.col(s0).length()
+    cs = CoordinateSystem2d(s0, s1)
+    x0, x1, y0, y1, _, _ = bbox
+    xsize, ysize = x1 - x0, y1 - y0
+
+    dxy = {}
+    for j in range(ysize + 1):
+        for i in range(xsize + 1):
+            lab = detector[0].get_pixel_lab_coord((x0 + i, y0 + j))
+            s_dash = matrix.col(lab).normalize() * s0_length
+            e1, e2 = cs.from_beam_vector(tuple(s_dash))
+            dxy[j, i] = (e1 * e1 + e2 * e2) / (delta_b * delta_b)
+    return dxy
+
+
+def _reference_mask(detector, beam, shoebox, s1, delta_b):
+    """The stills mask, from the reference corner values."""
+    from dials.algorithms.shoebox import MaskCode
+
+    dxy = _reference_dxy(detector, beam, shoebox.bbox, s1, delta_b)
+    x0, x1, y0, y1, _, _ = shoebox.bbox
+    xsize, ysize = x1 - x0, y1 - y0
+
+    mask = flex.int(shoebox.mask.accessor(), MaskCode.Valid)
+    for j in range(ysize):
+        for i in range(xsize):
+            value = min(dxy[j, i], dxy[j + 1, i], dxy[j, i + 1], dxy[j + 1, i + 1])
+            mask[0, j, i] |= (
+                MaskCode.Foreground if value <= 1.0 else MaskCode.Background
+            )
+    return mask
+
+
+def test_mask_calculator_2d_matches_single_coordinate_conversion():
+    from dials.algorithms.profile_model.gaussian_rs import MaskCalculator2D
+
+    detector, beam = _stills_detector_and_beam()
+    shoeboxes, s1, panel = _stills_shoeboxes(detector, beam)
+    delta_b = 0.02
+
+    MaskCalculator2D(beam, detector, delta_b, 0.0)(
+        shoeboxes, s1, flex.double(len(shoeboxes), 0), panel
+    )
+
+    for index, shoebox in enumerate(shoeboxes):
+        reference = _reference_mask(detector, beam, shoebox, s1[index], delta_b)
+        assert list(shoebox.mask) == list(reference), shoebox.bbox
+
+    foreground = sum(
+        int(value & MaskCode.Foreground != 0) for s in shoeboxes for value in s.mask
+    )
+    assert foreground > 0
+
+
+def test_mask_calculator_2d_array_matches_one_shoebox_at_a_time():
+    from dials.algorithms.profile_model.gaussian_rs import MaskCalculator2D
+
+    detector, beam = _stills_detector_and_beam()
+    delta_b = 0.02
+    calculator = MaskCalculator2D(beam, detector, delta_b, 0.0)
+
+    batched, s1, panel = _stills_shoeboxes(detector, beam)
+    calculator(batched, s1, flex.double(len(batched), 0), panel)
+
+    one_at_a_time, _, _ = _stills_shoeboxes(detector, beam)
+    for index, shoebox in enumerate(one_at_a_time):
+        calculator(shoebox, s1[index], 0.0, panel[index], False)
+
+    for a, b in zip(batched, one_at_a_time):
+        assert list(a.mask) == list(b.mask), a.bbox
+
+
+def test_mask_calculator_2d_volume_matches_single_coordinate_conversion():
+    """The image volume path shares the corner loop but not the stills_process path."""
+    from dials.algorithms.profile_model.gaussian_rs import MaskCalculator2D
+    from dials.model.data import ImageVolume, MultiPanelImageVolume
+
+    detector, beam = _stills_detector_and_beam()
+    delta_b = 0.02
+    width, height = detector[0].get_image_size()
+
+    # The second box straddles the panel edge, so its fraction is not trivially zero.
+    bbox = flex.int6([(200, 212, 150, 162, 0, 1), (-4, 8, 300, 312, 0, 1)])
+    s0_length = matrix.col(beam.get_s0()).length()
+    s1 = flex.vec3_double()
+    for x0, x1, y0, y1, _, _ in bbox:
+        centre = detector[0].get_pixel_lab_coord((0.5 * (x0 + x1), 0.5 * (y0 + y1)))
+        s1.append(tuple(matrix.col(centre).normalize() * s0_length))
+    panel = flex.size_t(len(bbox), 0)
+
+    volume = MultiPanelImageVolume()
+    volume.add(ImageVolume(0, 1, height, width))
+
+    fraction = MaskCalculator2D(beam, detector, delta_b, 0.0)(
+        volume, bbox, s1, flex.double(len(bbox), 0), panel
+    )
+
+    for index in range(len(bbox)):
+        x0, x1, y0, y1, _, _ = bbox[index]
+        dxy = _reference_dxy(detector, beam, bbox[index], s1[index], delta_b)
+        inside = outside_foreground = 0
+        for j in range(y1 - y0):
+            for i in range(x1 - x0):
+                value = min(dxy[j, i], dxy[j + 1, i], dxy[j, i + 1], dxy[j + 1, i + 1])
+                if 0 <= y0 + j < height and 0 <= x0 + i < width:
+                    inside += 1
+                elif value <= 1.0:
+                    outside_foreground += 1
+        assert fraction[index] == outside_foreground / (inside + outside_foreground)
+
+    assert fraction[0] == 0.0
+    assert fraction[1] > 0.0

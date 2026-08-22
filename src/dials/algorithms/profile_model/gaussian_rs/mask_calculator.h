@@ -575,11 +575,16 @@ namespace dials { namespace algorithms { namespace profile_model {
         // Background.
         af::versa<double, af::c_grid<2> > dxy_array(
           af::c_grid<2>(ysize + 1, xsize + 1));
+        af::shared<vec2<double> > row_px(xsize + 1);
+        af::shared<vec2<double> > row_mm(xsize + 1);
         for (int j = 0; j <= ysize; ++j) {
           for (int i = 0; i <= xsize; ++i) {
+            row_px[i] = vec2<double>(x0 + i, y0 + j);
+          }
+          panel.pixel_to_millimeter(row_px.const_ref(), row_mm.ref());
+          for (int i = 0; i <= xsize; ++i) {
             vec2<double> gxy = cs.from_beam_vector(
-              panel.get_pixel_lab_coord(vec2<double>(x0 + i, y0 + j)).normalize()
-              * s0_length);
+              panel.get_lab_coord(row_mm[i]).normalize() * s0_length);
             dxy_array(j, i) = (gxy[0] * gxy[0] + gxy[1] * gxy[1]) * delta_b_r2;
           }
         }
@@ -677,11 +682,16 @@ namespace dials { namespace algorithms { namespace profile_model {
         // Background.
         af::versa<double, af::c_grid<2> > dxy_array(
           af::c_grid<2>(ysize + 1, xsize + 1));
+        af::shared<vec2<double> > row_px(xsize + 1);
+        af::shared<vec2<double> > row_mm(xsize + 1);
         for (int j = 0; j <= ysize; ++j) {
           for (int i = 0; i <= xsize; ++i) {
+            row_px[i] = vec2<double>(x0 + i, y0 + j);
+          }
+          panel.pixel_to_millimeter(row_px.const_ref(), row_mm.ref());
+          for (int i = 0; i <= xsize; ++i) {
             vec2<double> gxy = cs.from_beam_vector(
-              panel.get_pixel_lab_coord(vec2<double>(x0 + i, y0 + j)).normalize()
-              * s0_length);
+              panel.get_lab_coord(row_mm[i]).normalize() * s0_length);
             dxy_array(j, i) = (gxy[0] * gxy[0] + gxy[1] * gxy[1]) * delta_b_r2;
           }
         }

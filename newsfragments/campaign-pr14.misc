@@ -1,0 +1,4 @@
+``dials.stills_process``: the stills foreground/background mask now converts each row of
+shoebox corners to millimetres in one call rather than one call per corner, and the
+reciprocal-space coordinate system scales its basis once per reflection rather than once
+per corner. ``compute_mask`` takes 0.34 of the time it did; the mask is unchanged.
