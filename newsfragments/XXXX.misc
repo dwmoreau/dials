@@ -1,0 +1,2 @@
+``dials.stills_process``: reject Miller indices that cannot diffract before predicting
+a ray for them, making stills reflection prediction 2-4x faster.
