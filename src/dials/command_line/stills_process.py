@@ -1228,14 +1228,15 @@ The detector is reporting a gain of {panel.get_gain():f} but you have also suppl
             bbox[i] = (bbox[i][0], bbox[i][1], bbox[i][2], bbox[i][3], 0, 1)
 
         if self.params.output.composite_output:
-            n = len(self.all_strong_reflections.experiment_identifiers())
-            for i, experiment in enumerate(experiments):
-                refls = observed.select(observed["id"] == i)
-                refls["id"] = flex.int(len(refls), n)
-                del refls.experiment_identifiers()[i]
-                refls.experiment_identifiers()[n] = experiment.identifier
-                self.all_strong_reflections.extend(refls)
-                n += 1
+            if self.params.output.strong_filename:
+                n = len(self.all_strong_reflections.experiment_identifiers())
+                for i, experiment in enumerate(experiments):
+                    refls = observed.select(observed["id"] == i)
+                    refls["id"] = flex.int(len(refls), n)
+                    del refls.experiment_identifiers()[i]
+                    refls.experiment_identifiers()[n] = experiment.identifier
+                    self.all_strong_reflections.extend(refls)
+                    n += 1
         else:
             # Save the reflections to file
             logger.info("\n" + "-" * 80)
@@ -1875,6 +1876,10 @@ The detector is reporting a gain of {panel.get_gain():f} but you have also suppl
                         def extend_with_bookkeeping(
                             src_expts, src_refls, dest_expts, dest_refls
                         ):
+                            dest_expts.extend(src_expts)
+                            # A table with no rows has no columns to renumber.
+                            if len(src_refls) == 0:
+                                return
                             n = len(dest_refls.experiment_identifiers())
                             src_refls["id"] += n
                             idents = src_refls.experiment_identifiers()
@@ -1884,7 +1889,6 @@ The detector is reporting a gain of {panel.get_gain():f} but you have also suppl
                                 del idents[key]
                             for i, key in enumerate(keys):
                                 idents[key + n] = values[i]
-                            dest_expts.extend(src_expts)
                             dest_refls.extend(src_refls)
 
                         if len(imported_experiments) > 0:
