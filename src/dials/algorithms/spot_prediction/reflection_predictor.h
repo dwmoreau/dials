@@ -13,6 +13,8 @@
 #define DIALS_ALGORITHMS_SPOT_PREDICTION_REFLECTION_PREDICTOR_H
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <scitbx/math/r3_rotation.h>
 #include <scitbx/constants.h>
@@ -963,12 +965,18 @@ namespace dials { namespace algorithms {
 
       // Create the index generate and loop through the indices. For each index,
       // predict the rays and append to the reflection table
+      vec3<double> s0 = beam_->get_s0();
+      double eps_cut = ewald_offset_cutoff(ub, 0.0015);
       IndexGenerator indices(unit_cell_, space_group_type_, dmin_);
       for (;;) {
         miller_index h = indices.next();
         if (h.is_zero()) {
           break;
         }
+
+        vec3<double> q = ub * h;
+        double eps = q * q + 2.0 * (q * s0);
+        if (std::abs(eps) > eps_cut) continue;
 
         Ray ray;
         ray = predict_ray_(h, ub);
@@ -1094,6 +1102,48 @@ namespace dials { namespace algorithms {
 
   protected:
     /**
+     * The largest |q.q + 2 q.s0| that a Miller index accepted at delta_psi_at_dmin
+     * can have, where q = ub h. A reflection diffracts when q lies on the Ewald
+     * sphere, and |q.q + 2 q.s0| <= 2 |s0| |q| |delta psi| bounds how far off it is,
+     * so an index exceeding this cutoff cannot pass the delta psi test. Returns
+     * infinity where the bound does not hold, which leaves the loop unfiltered.
+     * @param ub The UB matrix
+     * @param delta_psi_at_dmin The acceptance threshold evaluated at dmin
+     * @returns The cutoff on the Ewald offset
+     */
+    double ewald_offset_cutoff(const mat3<double>& ub, double delta_psi_at_dmin) const {
+      // Slack against rounding in the Ewald offset and in delta psi
+      const double safety_factor = 2.0;
+
+      double s0_length = vec3<double>(beam_->get_s0()).length();
+
+      // StillsRayPredictor requires |q| < 2 |s0|
+      if (dmin_ <= 0.5 / s0_length) {
+        return std::numeric_limits<double>::infinity();
+      }
+
+      // The cutoff holds while |ub h| is 1 / unit_cell_.d(h). These six indices span
+      // the six components of the quadratic form, so agreement on them is agreement
+      // for every index.
+      static const int probes[6][3] = {
+        {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 0}, {0, 1, 1}, {1, 0, 1}};
+      for (std::size_t i = 0; i < 6; ++i) {
+        miller_index h(probes[i][0], probes[i][1], probes[i][2]);
+        double d = unit_cell_.d(h);
+        if (d <= 0.0) {
+          return std::numeric_limits<double>::infinity();
+        }
+        double from_ub = (ub * h).length_sq();
+        double from_unit_cell = 1.0 / (d * d);
+        if (std::abs(from_ub - from_unit_cell) > 1e-12 * from_unit_cell) {
+          return std::numeric_limits<double>::infinity();
+        }
+      }
+
+      return 2.0 * safety_factor * s0_length * delta_psi_at_dmin / dmin_;
+    }
+
+    /**
      * Predict for the given Miller index, UB matrix and panel number
      * @param p The reflection data
      * @param ub The UB matrix
@@ -1205,12 +1255,20 @@ namespace dials { namespace algorithms {
 
       // Create the index generate and loop through the indices. For each index,
       // predict the rays and append to the reflection table
+      vec3<double> s0 = beam_->get_s0();
+      double eps_cut = ewald_offset_cutoff(
+        ub, (dmin_ / ML_domain_size_ang_) + (ML_half_mosaicity_deg_ * pi_180 / 2));
       IndexGenerator indices(unit_cell_, space_group_type_, dmin_);
       for (;;) {
         miller_index h = indices.next();
         if (h.is_zero()) {
           break;
         }
+
+        vec3<double> q = ub * h;
+        double eps = q * q + 2.0 * (q * s0);
+        if (std::abs(eps) > eps_cut) continue;
+
         double d = unit_cell_.d(h);
         double deltapsi_model = (d / ML_domain_size_ang_)
                                 + (ML_half_mosaicity_deg_ * pi_180 / 2);  // equation 16
@@ -1270,12 +1328,18 @@ namespace dials { namespace algorithms {
 
       // Create the index generate and loop through the indices. For each index,
       // predict the rays and append to the reflection table
+      vec3<double> s0 = beam_->get_s0();
+      double eps_cut = ewald_offset_cutoff(ub, 0.0015);
       IndexGenerator indices(unit_cell_, space_group_type_, dmin_);
       for (;;) {
         miller_index h = indices.next();
         if (h.is_zero()) {
           break;
         }
+
+        vec3<double> q = ub * h;
+        double eps = q * q + 2.0 * (q * s0);
+        if (std::abs(eps) > eps_cut) continue;
 
         Ray ray;
         ray = spherical_relp_predict_ray_(h, ub);
