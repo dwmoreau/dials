@@ -1,0 +1,3 @@
+``dials.stills_process``: only accumulate the composite table of strong reflections when
+``output.strong_filename`` is set. It is written nowhere else, so in the default
+configuration it grew, with its shoebox columns, for the whole run and was then discarded.
