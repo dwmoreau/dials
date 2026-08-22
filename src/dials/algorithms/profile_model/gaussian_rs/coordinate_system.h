@@ -69,7 +69,10 @@ namespace dials { namespace algorithms { namespace profile_model {
             s1_(s1.normalize() * s0.length()),
             p_star_(s1 - s0),
             e1_(s1.cross(s0).normalize()),
-            e2_(s1.cross(e1_).normalize()) {}
+            e2_(s1.cross(e1_).normalize()),
+            s1_length_(s1_.length()),
+            scaled_e1_(e1_ / s1_length_),
+            scaled_e2_(e2_ / s1_length_) {}
 
       /** @returns the incident beam vector */
       vec3<double> s0() const {
@@ -102,11 +105,8 @@ namespace dials { namespace algorithms { namespace profile_model {
        * @returns The e1, e2 coordinates
        */
       vec2<double> from_beam_vector(const vec3<double>& s_dash) const {
-        double s1_length = s1_.length();
-        DIALS_ASSERT(s1_length > 0);
-        vec3<double> scaled_e1 = e1_ / s1_length;
-        vec3<double> scaled_e2 = e2_ / s1_length;
-        return vec2<double>(scaled_e1 * (s_dash - s1_), scaled_e2 * (s_dash - s1_));
+        DIALS_ASSERT(s1_length_ > 0);
+        return vec2<double>(scaled_e1_ * (s_dash - s1_), scaled_e2_ * (s_dash - s1_));
       }
 
       /**
@@ -115,7 +115,7 @@ namespace dials { namespace algorithms { namespace profile_model {
        * @returns The beam vector
        */
       vec3<double> to_beam_vector(const vec2<double>& c12) const {
-        double radius = s1_.length();
+        double radius = s1_length_;
         DIALS_ASSERT(radius > 0);
         vec3<double> scaled_e1 = e1_ * radius;
         vec3<double> scaled_e2 = e2_ * radius;
@@ -134,6 +134,9 @@ namespace dials { namespace algorithms { namespace profile_model {
       vec3<double> p_star_;
       vec3<double> e1_;
       vec3<double> e2_;
+      double s1_length_;
+      vec3<double> scaled_e1_;
+      vec3<double> scaled_e2_;
     };
 
     /**
