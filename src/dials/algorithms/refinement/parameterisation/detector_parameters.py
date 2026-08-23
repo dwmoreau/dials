@@ -933,10 +933,7 @@ class DetectorParameterisationHierarchical(DetectorParameterisationMultiPanel):
             raise
 
         # collect the panel ids for each Panel within the groups
-        panels = list(detector)
-        self._panel_ids_by_group = [
-            get_panel_ids_at_root(panels, g) for g in self._groups
-        ]
+        self._panel_ids_by_group = [get_panel_ids_at_root(g) for g in self._groups]
 
         p_list = []
         self._group_ids_by_parameter = []

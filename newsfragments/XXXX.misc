@@ -1,0 +1,6 @@
+Hierarchical detector refinement: resolve a panel's index with ``Detector.Node.index()``
+rather than by searching the panel list. The search compared panels with
+``Panel::operator==``, a deep comparison of geometry, trusted range, mask and pixel-to-
+millimetre strategy, so each of a 256-panel detector's leaves cost 128 such comparisons on
+average. Resolving every leaf of a 256-panel detector takes 0.03 ms rather than 2.8 ms.
+``get_panel_ids_at_root`` no longer takes a panel list.

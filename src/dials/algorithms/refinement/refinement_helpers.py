@@ -221,14 +221,12 @@ def get_panel_groups_at_depth(group, depth=0):
         ]
 
 
-def get_panel_ids_at_root(panel_list, group):
+def get_panel_ids_at_root(group):
     """Get the sequential panel IDs for a set of panels belonging to a group"""
     if group.is_group():
-        return [
-            p for gp in group.children() for p in get_panel_ids_at_root(panel_list, gp)
-        ]
+        return [p for gp in group.children() for p in get_panel_ids_at_root(gp)]
     else:  # we got down to Panels
-        return [panel_list.index(group)]
+        return [group.index()]
 
 
 def string_sel(l, full_names, prefix=""):
