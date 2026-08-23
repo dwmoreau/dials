@@ -562,11 +562,28 @@ namespace dials { namespace refinement {
     }
 
     // Use the cached derivatives for the panel group to calculate the
-    // derivatives of the d matrix for one panel, described by the offset,
-    // dir1_new_basis and dir2_new_basis vectors.
-    af::shared<mat3<double> > derivatives_for_panel(const vec3<double> offset,
-                                                    const vec3<double> dir1_new_basis,
-                                                    const vec3<double> dir2_new_basis) {
+    // derivatives of the d matrix for each panel of the group, described by the
+    // offset, dir1_new_basis and dir2_new_basis vectors. The result holds the
+    // six derivatives of the first panel, then those of the second, and so on.
+    af::shared<mat3<double> > derivatives_for_panels(
+      const af::const_ref<vec3<double> >& offsets,
+      const af::const_ref<vec3<double> >& dir1s,
+      const af::const_ref<vec3<double> >& dir2s) {
+      DIALS_ASSERT(offsets.size() == dir1s.size());
+      DIALS_ASSERT(offsets.size() == dir2s.size());
+      af::shared<mat3<double> > ret(6 * offsets.size(),
+                                    af::init_functor_null<mat3<double> >());
+      for (std::size_t i = 0; i < offsets.size(); ++i) {
+        derivatives_for_panel(offsets[i], dir1s[i], dir2s[i], &ret[6 * i]);
+      }
+      return ret;
+    }
+
+  private:
+    void derivatives_for_panel(const vec3<double> offset,
+                               const vec3<double> dir1_new_basis,
+                               const vec3<double> dir2_new_basis,
+                               mat3<double>* ret) {
       // Panel origin, which is calculated by:
       // o = dorg + offset[0] * d1 + offset[1] * d2 + offset[2] * dn
 
@@ -678,8 +695,6 @@ namespace dials { namespace refinement {
       // combine these vectors together into derivatives of the panel
       // matrix d and store them, converting angles back to mrad
 
-      af::shared<mat3<double> > ret(6, af::init_functor_null<mat3<double> >());
-
       // derivative wrt dist
       ret[0] = mat3<double>(ddir1_ddist[0],
                             ddir2_ddist[0],
@@ -748,11 +763,8 @@ namespace dials { namespace refinement {
                             ddir2_dtau3[2],
                             do_dtau3[2])
                / 1000.;
-
-      return ret;
     }
 
-  private:
     // Calculate the new state for this panel group and cache the
     // intermediate derivatives required for calculating the derivatives
     // of each panel's d matrix wrt the parameters.
