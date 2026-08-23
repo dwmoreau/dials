@@ -17,6 +17,7 @@
 namespace dials { namespace refinement {
 
   using dxtbx::model::Detector;
+  using dxtbx::model::Panel;
   using scitbx::mat3;
   using scitbx::vec3;
   using scitbx::math::r3_rotation::axis_and_angle_as_matrix;
@@ -422,6 +423,91 @@ namespace dials { namespace refinement {
                                         dTau2_dtau2,
                                         Tau3,
                                         dTau3_dtau3);
+  }
+
+  // Accumulate a dot product one term at a time, left to right.
+  inline double dot_lr(const vec3<double>& a, const vec3<double>& b) {
+    double result = 0.0;
+    result += a[0] * b[0];
+    result += a[1] * b[1];
+    result += a[2] * b[2];
+    return result;
+  }
+
+  /**
+   * The centroid of the centres of a group of panels, in the laboratory frame.
+   * Used by the hierarchical detector parameterisation to place the origin of
+   * a panel group's frame.
+   */
+  vec3<double> panel_group_centroid(const Detector& detector,
+                                    const af::const_ref<std::size_t>& panel_ids) {
+    DIALS_ASSERT(panel_ids.size() > 0);
+    vec3<double> centroid(0., 0., 0.);
+    for (std::size_t i = 0; i < panel_ids.size(); ++i) {
+      const Panel& p = detector[panel_ids[i]];
+      scitbx::af::tiny<double, 2> size = p.get_image_size_mm();
+      vec3<double> centre = p.get_origin();
+      vec3<double> axis = p.get_fast_axis();
+      for (std::size_t j = 0; j < 3; ++j) {
+        centre[j] += (axis[j] * 0.5) * size[0];
+      }
+      axis = p.get_slow_axis();
+      for (std::size_t j = 0; j < 3; ++j) {
+        centre[j] += (axis[j] * 0.5) * size[1];
+      }
+      if (i == 0) {
+        centroid = centre;
+      } else {
+        for (std::size_t j = 0; j < 3; ++j) {
+          centroid[j] += centre[j];
+        }
+      }
+    }
+    double n = static_cast<double>(panel_ids.size());
+    for (std::size_t j = 0; j < 3; ++j) {
+      centroid[j] /= n;
+    }
+    return centroid;
+  }
+
+  /**
+   * For each panel of a group, its origin relative to the end of the dorg
+   * vector and its two plane directions, all expressed in the d1, d2, dn basis
+   * of the group frame. These are fixed quantities, independent of the
+   * parameter values, so the hierarchical detector parameterisation calculates
+   * them once on construction.
+   */
+  boost::python::tuple panel_offsets_and_directions(
+    const Detector& detector,
+    const af::const_ref<std::size_t>& panel_ids,
+    const vec3<double>& dorg,
+    const vec3<double>& d1,
+    const vec3<double>& d2,
+    const vec3<double>& dn) {
+    af::shared<vec3<double> > offsets(panel_ids.size(),
+                                      af::init_functor_null<vec3<double> >());
+    af::shared<vec3<double> > dir1s(panel_ids.size(),
+                                    af::init_functor_null<vec3<double> >());
+    af::shared<vec3<double> > dir2s(panel_ids.size(),
+                                    af::init_functor_null<vec3<double> >());
+
+    for (std::size_t i = 0; i < panel_ids.size(); ++i) {
+      const Panel& p = detector[panel_ids[i]];
+
+      vec3<double> v = p.get_origin();
+      for (std::size_t j = 0; j < 3; ++j) {
+        v[j] -= dorg[j];
+      }
+      offsets[i] = vec3<double>(dot_lr(v, d1), dot_lr(v, d2), dot_lr(v, dn));
+
+      v = p.get_fast_axis();
+      dir1s[i] = vec3<double>(dot_lr(v, d1), dot_lr(v, d2), dot_lr(v, dn));
+
+      v = p.get_slow_axis();
+      dir2s[i] = vec3<double>(dot_lr(v, d1), dot_lr(v, d2), dot_lr(v, dn));
+    }
+
+    return boost::python::make_tuple(offsets, dir1s, dir2s);
   }
 
   /**

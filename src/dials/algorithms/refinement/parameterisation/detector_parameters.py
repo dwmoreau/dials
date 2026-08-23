@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from functools import reduce
-
 from scitbx import matrix
 from scitbx.array_family import flex
 
@@ -14,6 +12,10 @@ from dials.algorithms.refinement.refinement_helpers import (
     dR_from_axis_and_angle,
     get_panel_groups_at_depth,
     get_panel_ids_at_root,
+)
+from dials_refinement_helpers_ext import (
+    panel_group_centroid,
+    panel_offsets_and_directions,
 )
 
 
@@ -944,16 +946,7 @@ class DetectorParameterisationHierarchical(DetectorParameterisationMultiPanel):
 
         # loop over the groups, collecting initial parameters and states
         for igp, pnl_ids in enumerate(self._panel_ids_by_group):
-            panel_centres_in_lab_frame = []
-            for i in pnl_ids:
-                pnl = detector[i]
-                im_size = pnl.get_image_size_mm()
-                cntr = (
-                    matrix.col(pnl.get_origin())
-                    + 0.5 * matrix.col(pnl.get_fast_axis()) * im_size[0]
-                    + 0.5 * matrix.col(pnl.get_slow_axis()) * im_size[1]
-                )
-                panel_centres_in_lab_frame.append(cntr)
+            pnl_ids = flex.size_t(pnl_ids)
 
             # get some vectors we need from the group
             go = matrix.col(self._groups[igp].get_origin())
@@ -965,9 +958,7 @@ class DetectorParameterisationHierarchical(DetectorParameterisationMultiPanel):
             # frame, at a point that we consider close to the centre of the group of
             # panels. This point is defined by taking the 3D centroid of the panel
             # centres then projecting that point onto the group frame.
-            centroid = reduce(lambda a, b: a + b, panel_centres_in_lab_frame) / len(
-                panel_centres_in_lab_frame
-            )
+            centroid = panel_group_centroid(detector, pnl_ids)
             try:
                 gp_centroid = matrix.col(
                     self._groups[igp].get_bidirectional_ray_intersection(centroid)
@@ -981,22 +972,13 @@ class DetectorParameterisationHierarchical(DetectorParameterisationMultiPanel):
             # each Panel origin is a coordinate matrix with elements in the basis d1,
             # d2, dn. We need also each Panel's plane directions dir1 and dir2 in
             # terms of d1, d2 and dn.
-            offsets, dir1s, dir2s = [], [], []
-            for p in [detector[i] for i in pnl_ids]:
-                offset = matrix.col(p.get_origin()) - dorg
-                offsets.append(
-                    matrix.col((offset.dot(d1), offset.dot(d2), offset.dot(dn)))
-                )
-                dir1 = matrix.col(p.get_fast_axis())
-                dir1_new_basis = matrix.col((dir1.dot(d1), dir1.dot(d2), dir1.dot(dn)))
-                dir1s.append(dir1_new_basis)
-                dir2 = matrix.col(p.get_slow_axis())
-                dir2_new_basis = matrix.col((dir2.dot(d1), dir2.dot(d2), dir2.dot(dn)))
-                dir2s.append(dir2_new_basis)
+            offsets, dir1s, dir2s = panel_offsets_and_directions(
+                detector, pnl_ids, dorg, d1, d2, dn
+            )
 
             # The offsets and directions in the d1, d2, dn basis are fixed
-            # quantities, not dependent on parameter values. Keep these as separate
-            # sub-lists for each group
+            # quantities, not dependent on parameter values. Keep one array of
+            # each per group
             self._offsets.append(offsets)
             self._dir1s.append(dir1s)
             self._dir2s.append(dir2s)
