@@ -47,10 +47,6 @@ class PanelGroupCompose(pgc_cpp):
     def origin(self):
         return scitbx.matrix.col(super().origin())
 
-    def derivatives_for_panel(self, offset, dir1_new_basis, dir2_new_basis):
-        d = super().derivatives_for_panel(offset, dir1_new_basis, dir2_new_basis)
-        return [scitbx.matrix.sqr(e) for e in d]
-
 
 class CrystalOrientationCompose(xloc_cpp):
     """Wrapper for the C++ CrystalOrientationCompose class with accessors that

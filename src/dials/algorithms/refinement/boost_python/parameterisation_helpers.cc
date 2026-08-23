@@ -89,7 +89,9 @@ namespace dials { namespace refinement { namespace boost_python {
       .def("d1", &PanelGroupCompose::d1)
       .def("d2", &PanelGroupCompose::d2)
       .def("origin", &PanelGroupCompose::origin)
-      .def("derivatives_for_panel", &PanelGroupCompose::derivatives_for_panel);
+      .def("derivatives_for_panels",
+           &PanelGroupCompose::derivatives_for_panels,
+           (arg("offsets"), arg("dir1s"), arg("dir2s")));
 
     def("intersection_i_seqs_unsorted",
         &intersection_i_seqs_unsorted,
