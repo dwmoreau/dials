@@ -42,6 +42,19 @@ namespace dials { namespace refinement { namespace boost_python {
          arg("Tau1"),
          arg("dTau1_dtau1")));
 
+    def("panel_group_centroid",
+        &panel_group_centroid,
+        (arg("detector"), arg("panel_ids")));
+
+    def("panel_offsets_and_directions",
+        &panel_offsets_and_directions,
+        (arg("detector"),
+         arg("panel_ids"),
+         arg("dorg"),
+         arg("d1"),
+         arg("d2"),
+         arg("dn")));
+
     class_<CrystalOrientationCompose>("CrystalOrientationCompose", no_init)
       .def(init<mat3<double>,
                 double,

@@ -1,0 +1,2 @@
+``dials.stills_process``: build the hierarchical detector parameterisation without
+per-panel ``scitbx.matrix`` arithmetic in Python.
