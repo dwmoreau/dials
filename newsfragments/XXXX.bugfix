@@ -1,0 +1,1 @@
+``dials.stills_process``: each image is now indexed with its own ``max_cell`` estimate instead of the first image's, so results without a known unit cell no longer depend on image order.

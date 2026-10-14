@@ -331,6 +331,9 @@ class BasisVectorSearch(LatticeSearch):
         )
 
     def find_candidate_basis_vectors(self):
+        # The strategy outlives a single image when the indexer is reused, so give it
+        # this image's max_cell before searching.
+        self._basis_vector_search_strategy.max_cell = self.params.max_cell
         self.d_min = self.params.refinement_protocol.d_min_start
         sel = self.reflections["id"] == -1
         if self.d_min is not None:

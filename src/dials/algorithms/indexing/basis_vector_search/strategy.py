@@ -22,6 +22,19 @@ class Strategy:
         if self._params is None and self.phil_scope is not None:
             self._params = self.phil_scope.extract()
 
+    @property
+    def max_cell(self):
+        """float: The estimate of the maximum primitive cell dimension.
+
+        Only read when a search is run, so a strategy may be reused across
+        images by assigning each image's own estimate before searching.
+        """
+        return self._max_cell
+
+    @max_cell.setter
+    def max_cell(self, value):
+        self._max_cell = value
+
     def find_basis_vectors(self, reciprocal_lattice_vectors):
         """Find a list of likely basis vectors.
 
