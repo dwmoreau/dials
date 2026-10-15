@@ -1,0 +1,1 @@
+``dials.stills_process``: the composite table of strong reflections is only kept in memory when ``output.strong_filename`` is set. Otherwise it grew for the whole run and was then discarded.

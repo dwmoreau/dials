@@ -158,6 +158,11 @@ def test_sacla_h5(dials_data, tmp_path, control_flags, in_memory=False):
             )
         )
 
+        if use_mpi:
+            # Composite output plus a stride gather, with the strong reflections not
+            # written: the empty strong table is remapped alongside these experiments.
+            f.write("output.experiments_filename=%s_imported.expt\n")
+
         if known_orientations:
             known_orientations_path = os.path.join(
                 sacla_path, "SACLA-MPCCD-run266702-0-subset-known_orientations.expt"
@@ -200,6 +205,12 @@ def test_sacla_h5(dials_data, tmp_path, control_flags, in_memory=False):
         assert counts.keys() == ranges.keys(), (result_filename, counts)
         for image, (min_, max_) in ranges.items():
             assert min_ <= counts[image] < max_, (result_filename, image, counts[image])
+
+    if use_mpi:
+        imported = ExperimentListFactory.from_json_file(
+            tmp_path / "idx-0000_imported.expt", check_format=False
+        )
+        assert len(imported) == 4
 
     # large ranges to handle platform-specific differences
     if control_flags in [("use_mpi"), ()]:
